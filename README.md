@@ -154,8 +154,18 @@ GPU 일일 한도 응답(429)은 초기화 시각과 함께 표시합니다. 정
 실제 Supabase와 Keychain을 변경하지 않는 모의 인증 검증:
 
 ```sh
-xcrun swiftc -swift-version 5 -parse-as-library XRCH/SupabaseConfiguration.swift XRCH/CompanionUsage.swift XRCH/CompanionAuthSession.swift Tests/AuthSessionHarness.swift -o /tmp/xrch-auth-tests
+xcrun swiftc -swift-version 5 -parse-as-library XRCH/SupabaseConfiguration.swift XRCH/CompanionUsage.swift XRCH/AppleSignInNonce.swift XRCH/CompanionAuthSession.swift Tests/AuthSessionHarness.swift -o /tmp/xrch-auth-tests
 /tmp/xrch-auth-tests
 ```
 
 네트워크 또는 Keychain 읽기 실패 시 저장된 익명 계정을 버리지 않습니다. 서버가 access token을 401로 거절하면 한 번 갱신 후 재요청하고, 429·서버 오류·타임아웃은 자동 재시도하지 않습니다. 실패 환급·추천 요청 재전송 멱등성은 서버 후속 작업입니다.
+
+## 구형 서버의 게스트 인증 호환
+
+앱은 게스트 Auth 사용자 JWT와 공개 프로젝트 apikey로 먼저 요청합니다. 서버가 정확히 HTTP 401 / API_KEY_REQUIRED를 반환할 때만 같은 JWT로 REST profiles에서 현재 사용자 id의 api_key를 조회하고, 해당 사용자에게 서버가 발급한 키를 x-api-key 헤더에 넣어 원래 요청을 한 번 재시도합니다. 새로운 사용자나 공유 키를 만들지 않고, 키는 로그나 UserDefaults에 기록하지 않습니다. JWT만 받는 새 서버에는 추가 조회가 없습니다.
+
+이 호환 경로는 운영 DB에 handle_new_user_profile 트리거 및 authenticated 사용자의 본인 프로필 SELECT 정책이 적용돼 있어야 합니다. 키가 없거나 조회가 거절되면 서버 설정 문제를 표시하며 인증을 우회하지 않습니다. 검색·chat/plan·chat에 동일하게 적용됩니다. 서버 배포는 이 변경에 포함되지 않습니다.
+
+## 다른 장소 보기
+
+채팅의 최근 추천 아래에서 다른 장소 보기를 누르면 원래 질문을 chat/plan으로 분석하고 search(provider=kakao-local)로 현재 GPS/설정 반경의 후보를 받습니다. 이미 보여 준 추천 장소를 제외한 후보를 chat.places로 보내 AI 추천을 요청합니다. 일반 추천과 동일한 chat 서버 사용량 한도를 공유하며, 게스트는 클릭 시 usage를 새로 확인합니다. 한도 확인 실패 또는 잔여 0회면 추가 추천을 진행하지 않습니다. 검색 후보가 없으면 GPU 추천을 요청하지 않습니다. 운영 서버의 usage 및 chat quota 기능이 있어야 서버 기준 하루 5회가 보장됩니다.

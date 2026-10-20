@@ -44,6 +44,21 @@ private func check(_ condition: @autoclosure () -> Bool, _ message: String) thro
     if !condition() { throw NSError(domain: "AuthSessionTest", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
 }
 private func json(_ object: [String: Any]) -> Data { try! JSONSerialization.data(withJSONObject: object) }
+private func requestBody(_ request: URLRequest) -> Data? {
+    if let body = request.httpBody { return body }
+    guard let stream = request.httpBodyStream else { return nil }
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while stream.hasBytesAvailable {
+        let count = stream.read(&buffer, maxLength: buffer.count)
+        if count < 0 { return nil }
+        if count == 0 { break }
+        data.append(buffer, count: count)
+    }
+    return data
+}
 private func storedSession(expired: Bool = false) -> Data {
     json(["userId": "guest-1", "accessToken": "guest-access", "refreshToken": "guest-refresh",
           "expiresAt": Date().addingTimeInterval(expired ? -60 : 3600).timeIntervalSinceReferenceDate,
@@ -67,6 +82,11 @@ private struct AuthSessionHarness {
         defer { network.invalidateAndCancel() }
         var passed = 0
         func pass(_ name: String) { passed += 1; print("PASS \(name)") }
+
+        let generatedNonce = try AppleSignInNonce.makeRawNonce()
+        try check(AppleSignInNonce.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "Apple nonce SHA-256 mismatch")
+        try check(generatedNonce.count == 32, "Apple nonce length mismatch")
+        pass("Apple nonce generation and SHA-256")
 
         do {
             let storage = MemoryStorage(), calls = Counter()
@@ -138,6 +158,37 @@ private struct AuthSessionHarness {
             try check(auth.usage?.remaining == 3 && auth.usage?.resetDate != nil, "Usage response headers were not read")
             pass("401 refreshes once and response updates remaining usage")
         }
+        for hasKey in [true, false] {
+            let calls = Counter(), profileReads = Counter()
+            MockTransport.handler = { request in
+                try check(request.value(forHTTPHeaderField: "Authorization") == "Bearer guest-access", "Guest JWT missing")
+                try check(request.value(forHTTPHeaderField: "apikey") == SupabaseConfiguration.publicKey, "Project key missing")
+                if request.url?.path == "/rest/v1/profiles" {
+                    profileReads.increment()
+                    let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+                    try check(query.contains(URLQueryItem(name: "id", value: "eq.guest-1")), "Must read own profile only")
+                    return (200, [:], hasKey ? try JSONSerialization.data(withJSONObject: [["api_key": "arch_live_own_guest"]]) : Data("[]".utf8))
+                }
+                try check(request.url?.path == "/functions/v1/search", "Must not refresh or create guests for legacy auth")
+                calls.increment()
+                if request.value(forHTTPHeaderField: "x-api-key") == "arch_live_own_guest" {
+                    return (200, usageHeaders, json(["success": true]))
+                }
+                return (401, [:], json(["code": "API_KEY_REQUIRED"]))
+            }
+            let original = storedSession(), storage = MemoryStorage(original)
+            let auth = CompanionAuthSession(storage: storage, guestStorage: MemoryStorage(), network: network)
+            do {
+                let (_, response) = try await auth.authenticatedRequest(URLRequest(url: SupabaseConfiguration.functionsURL.appendingPathComponent("search")))
+                try check(hasKey && response.statusCode == 200, "Own-key fallback failed")
+                try check(auth.usage?.remaining == 3, "Compatibility response quota was lost")
+            } catch {
+                try check(!hasKey && error.localizedDescription.contains("본인 API 키"), "Unexpected compatibility error")
+            }
+            try check(calls.value == (hasKey ? 2 : 1) && profileReads.value == 1, "Unbounded legacy retry")
+            try check(storage.data == original, "Compatibility must preserve the guest identity")
+            pass(hasKey ? "legacy server retries with the same guest's RLS-issued key" : "missing own key fails clearly without replacing the guest")
+        }
         do {
             let calls = Counter()
             MockTransport.handler = { request in
@@ -156,6 +207,31 @@ private struct AuthSessionHarness {
             do { try await auth.signIn(email: "test@example.com", password: "invalid"); throw URLError(.unknown) }
             catch { try check(storage.data == original && auth.isGuest, "Failed login replaced the guest") }
             pass("failed account login retains the guest")
+        }
+        do {
+            let storage = MemoryStorage(storedSession()), backup = MemoryStorage()
+            MockTransport.handler = { request in
+                if request.url?.path == "/functions/v1/login" {
+                    try check(request.httpMethod == "POST", "Apple login must POST to login function")
+                    try check(request.value(forHTTPHeaderField: "apikey") == SupabaseConfiguration.publicKey, "Apple login missing project key")
+                    try check(request.value(forHTTPHeaderField: "Authorization") == nil, "New Apple login must not send the guest token")
+                    let body = try JSONSerialization.jsonObject(with: requestBody(request)!) as! [String: String]
+                    try check(body["provider"] == "apple" && body["idToken"] == "apple-id-token" && body["nonce"] == "raw-nonce", "Apple identity contract mismatch")
+                    try check(body["fullName"] == "Test Person", "Apple first-use name was not forwarded")
+                    return (200, [:], json(["success": true, "userId": "apple-user", "email": "relay@example.com",
+                                          "nickname": "Test Person", "isAdmin": false, "isAnonymous": false,
+                                          "accessToken": "supabase-access", "refreshToken": "supabase-refresh", "accessExpiresIn": 3600]))
+                }
+                try check(request.url?.path == "/functions/v1/usage", "Apple login should refresh usage")
+                return (200, [:], json(["success": true, "remaining": NSNull(),
+                                        "resetAt": "2030-01-01T15:00:00+00:00", "isAnonymous": false]))
+            }
+            let auth = CompanionAuthSession(storage: storage, guestStorage: backup, network: network)
+            try await auth.signInWithApple(idToken: "apple-id-token", nonce: "raw-nonce", fullName: "Test Person")
+            let record = try JSONSerialization.jsonObject(with: storage.data!) as! [String: Any]
+            try check(auth.isAuthenticated && !auth.isGuest && record["accessToken"] as? String == "supabase-access", "Supabase session was not persisted after Apple login")
+            try check(backup.data != nil && auth.nickname == "Test Person", "Apple login did not preserve guest or server nickname")
+            pass("Apple identity token exchanges for and stores a Supabase session")
         }
         do {
             let storage = MemoryStorage(storedSession()), backup = MemoryStorage(), logouts = Counter()
