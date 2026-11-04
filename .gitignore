@@ -1,1 +1,28 @@
+# Local backend/signing configuration (the example remains tracked)
 Config/LocalSecrets.xcconfig
+.env
+.env.*
+!.env.example
+
+# Xcode per-user state
+**/xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+.DS_Store
+
+# Build output and diagnostics
+DerivedData/
+build/
+*.xcarchive/
+*.ipa
+*.dSYM/
+*.log
+*.trace
+
+# Private signing material
+*.p12
+*.p8
+*.pem
+*.key
+*.mobileprovision

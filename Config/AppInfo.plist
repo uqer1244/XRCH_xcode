@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>SupabaseProjectHost</key>
+    <string>$(SUPABASE_PROJECT_HOST)</string>
+    <key>SupabaseAnonKey</key>
+    <string>$(SUPABASE_ANON_KEY)</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>주변 음식점을 찾고 AI 장소 추천 및 글라스 위치 연동에 현재 위치를 사용합니다.</string>
+</dict>
+</plist>

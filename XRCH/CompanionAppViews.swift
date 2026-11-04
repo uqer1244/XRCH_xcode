@@ -110,16 +110,16 @@ private enum RecommendationAPI {
             "recent_recommended_ids": excludedIDs
         ])
 
-        trace("POST \(endpoint.absoluteString)\n" + String(decoding: request.httpBody ?? Data(), as: UTF8.self))
+        trace("POST chat · 요청 본문 생략")
         let started = Date()
         let (data, http): (Data, HTTPURLResponse)
         do {
             (data, http) = try await auth.authenticatedRequest(request)
         } catch {
-            trace("네트워크/인증 실패 · \(String(format: "%.1f", Date().timeIntervalSince(started)))초 · \(error.localizedDescription)")
+            trace("네트워크/인증 실패 · \(String(format: "%.1f", Date().timeIntervalSince(started)))초 · 오류 본문 생략")
             throw error
         }
-        trace("HTTP \(http.statusCode) · \(String(format: "%.1f", Date().timeIntervalSince(started)))초\n" + String(String(decoding: data, as: UTF8.self).prefix(24000)))
+        trace("HTTP \(http.statusCode) · \(String(format: "%.1f", Date().timeIntervalSince(started)))초 · 응답 본문 생략")
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw RecommendationError.invalidResponse
         }
@@ -171,9 +171,9 @@ private enum RecommendationAPI {
             "lng": location.coordinate.longitude, "radiusMeters": radius,
             "provider": "kakao-local", "maxResults": 30
         ])
-        trace("추가 후보 POST search\n" + String(decoding: request.httpBody ?? Data(), as: UTF8.self))
+        trace("추가 후보 POST search · 요청 본문 생략")
         let (data, http) = try await auth.authenticatedRequest(request)
-        trace("추가 후보 HTTP \(http.statusCode)\n" + String(String(decoding: data, as: UTF8.self).prefix(24000)))
+        trace("추가 후보 HTTP \(http.statusCode) · 응답 본문 생략")
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               (200...299).contains(http.statusCode), object["success"] as? Bool == true else {
             throw RecommendationError.server("카카오 장소 검색 실패 (HTTP \(http.statusCode))")
@@ -280,8 +280,10 @@ final class CompanionAppModel: ObservableObject {
     @Published var isDebugSearching = false
 
     func traceAI(_ text: String) {
+        #if DEBUG
         let entry = "[\(Date().formatted(date: .omitted, time: .standard))] \(text)\n\n"
         aiDebugLog = String((aiDebugLog + entry).suffix(64000))
+        #endif
     }
 
     func debugSearch(auth: CompanionAuthSession) {
@@ -295,7 +297,7 @@ final class CompanionAppModel: ObservableObject {
             switch result {
             case .failure(let error):
                 self.debugSearchStatus = "GPS 실패: \(error.localizedDescription)"
-                self.traceAI(self.debugSearchStatus)
+                self.traceAI("검색 진단 · GPS 확인 실패")
                 self.isDebugSearching = false
             case .success(let location):
                 Task {
@@ -310,11 +312,11 @@ final class CompanionAppModel: ObservableObject {
                             "lng": location.coordinate.longitude, "radiusMeters": self.searchRadius,
                             "maxResults": 15, "provider": "fusion"
                         ])
-                        self.traceAI("POST search\n" + String(decoding: request.httpBody ?? Data(), as: UTF8.self))
+                        self.traceAI("POST search · 요청 본문 생략")
                         self.debugSearchStatus = "search 요청 중"
                         let start = Date()
                         let (data, http) = try await auth.authenticatedRequest(request)
-                        self.traceAI("검색 HTTP \(http.statusCode) · \(String(format: "%.1f", Date().timeIntervalSince(start)))초\n" + String(String(decoding: data, as: UTF8.self).prefix(24000)))
+                        self.traceAI("검색 HTTP \(http.statusCode) · \(String(format: "%.1f", Date().timeIntervalSince(start)))초 · 응답 본문 생략")
                         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                         let code = object?["code"] as? String ?? ""
                         if code == "API_KEY_REQUIRED" {
@@ -327,7 +329,7 @@ final class CompanionAppModel: ObservableObject {
                         }
                     } catch {
                         self.debugSearchStatus = "검색 실패: \(error.localizedDescription)"
-                        self.traceAI(self.debugSearchStatus)
+                        self.traceAI("검색 진단 실패 · 오류 본문 생략")
                     }
                 }
             }
@@ -343,6 +345,7 @@ final class CompanionAppModel: ObservableObject {
 
     let categories = ["전체", "카페", "음식점", "쇼핑", "생활", "의료"]
     @Published var pois: [CompanionPOI] = []
+    @Published var nearbyPOIs: [CompanionPOI] = []
 
     var filteredPOIs: [CompanionPOI] {
         pois.filter { poi in
@@ -354,7 +357,10 @@ final class CompanionAppModel: ObservableObject {
         }
     }
 
-    var favorites: [CompanionPOI] { pois.filter { favoriteIDs.contains($0.id) } }
+    var favorites: [CompanionPOI] {
+        var seen: Set<String> = []
+        return (pois + nearbyPOIs).filter { favoriteIDs.contains($0.id) && seen.insert($0.id).inserted }
+    }
 
     func submitSearch() {
         let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -402,9 +408,9 @@ final class CompanionAppModel: ObservableObject {
                 self.recommendationMessages.append(.init(role: .assistant, text: error.localizedDescription, places: []))
                 self.isRecommending = false
                 self.lastRecommendationStatus = "GPS 실패: \(error.localizedDescription)"
-                self.traceAI(self.lastRecommendationStatus)
+                self.traceAI("추천 · GPS 확인 실패")
             case .success(let location):
-                self.traceAI("GPS · \(location.coordinate.latitude), \(location.coordinate.longitude) · 정확도 \(location.horizontalAccuracy)m · 반경 \(self.searchRadius)m")
+                self.traceAI("GPS 확인 완료 · 좌표 생략 · 반경 \(self.searchRadius)m")
                 self.lastRecommendationAccuracy = location.horizontalAccuracy
                 self.lastRecommendationStatus = "Supabase 요청 중"
                 Task {
@@ -466,7 +472,7 @@ final class CompanionAppModel: ObservableObject {
                         self.recommendationMessages.append(.init(role: .assistant,
                             text: "추천 요청 실패: \(error.localizedDescription)", places: []))
                         self.lastRecommendationStatus = "실패: \(error.localizedDescription)"
-                        self.traceAI(self.lastRecommendationStatus)
+                        self.traceAI("추천 실패 · 오류 본문 생략")
                     }
                     self.lastRecommendationAt = Date()
                     self.isRecommending = false
@@ -489,23 +495,47 @@ final class CompanionAppModel: ObservableObject {
     }
 }
 
+private enum CompanionTab: Hashable {
+    case discover, recommendations, map, saved, other
+}
+
 struct ContentView: View {
+    @State private var selectedTab: CompanionTab = .discover
+
+    init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-map-preview") {
+            _selectedTab = State(initialValue: .map)
+        }
+        #endif
+    }
     @StateObject private var bridge = QuestLocationBridge()
     @StateObject private var model = CompanionAppModel()
     @StateObject private var auth = CompanionAuthSession()
 
     var body: some View {
-        TabView {
-            NavigationStack { DiscoverView() }
+        TabView(selection: $selectedTab) {
+            NavigationStack {
+                DiscoverView { selectedTab = .recommendations }
+            }
                 .tabItem { Label("탐색", systemImage: "sparkle.magnifyingglass") }
+                .tag(CompanionTab.discover)
             NavigationStack { AIRecommendationChatView() }
                 .tabItem { Label("AI 추천", systemImage: "bubble.left.and.bubble.right.fill") }
+                .tag(CompanionTab.recommendations)
             NavigationStack { CompanionMapView() }
                 .tabItem { Label("지도", systemImage: "map.fill") }
+                .tag(CompanionTab.map)
             NavigationStack { SavedPlacesView() }
                 .tabItem { Label("저장", systemImage: "heart.fill") }
+                .tag(CompanionTab.saved)
             NavigationStack { OtherView(bridge: bridge) }
                 .tabItem { Label("기타", systemImage: "ellipsis.circle") }
+                .tag(CompanionTab.other)
+        }
+        .sheet(item: $model.selectedPOI) { poi in
+            POIDetailView(poi: poi, bridge: bridge)
+                .environmentObject(model)
         }
         .environmentObject(model)
         .environmentObject(auth)
@@ -518,9 +548,23 @@ private struct AIRecommendationChatView: View {
     @EnvironmentObject private var model: CompanionAppModel
     @EnvironmentObject private var auth: CompanionAuthSession
     @FocusState private var promptFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @AppStorage("companionSearchRadius") private var searchRadius = 500.0
+    @State private var showsSearchRadius = false
 
     var body: some View {
         VStack(spacing: 0) {
+            Button { showsSearchRadius = true } label: {
+                HStack {
+                    Label("검색 범위", systemImage: "circle.dashed")
+                    Spacer()
+                    Text("반경 \(Int(searchRadius))m").monospacedDigit()
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 16).padding(.vertical, 12)
+            }
+            .accessibilityLabel("검색 반경 \(Int(searchRadius))미터, 변경")
             if auth.isGuest {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(auth.usageStatus).font(.subheadline)
@@ -539,6 +583,30 @@ private struct AIRecommendationChatView: View {
                             messageRow(message)
                                 .id(message.id)
                         }
+                        if model.recommendationMessages.count == 1 {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("이렇게 물어보세요").font(.subheadline.weight(.semibold))
+                                ForEach(["조용히 작업하기 좋은 카페", "혼자 가기 좋은 점심 식당", "가볍게 산책할 만한 곳"], id: \.self) { prompt in
+                                    Button {
+                                        model.aiPrompt = prompt
+                                        promptFocused = true
+                                    } label: {
+                                        HStack {
+                                            Text(prompt).multilineTextAlignment(.leading)
+                                            Spacer(minLength: 8)
+                                            Image(systemName: "arrow.down.left").accessibilityHidden(true)
+                                        }
+                                        .padding(14)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(.background, in: RoundedRectangle(cornerRadius: 14))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                Text("질문을 고른 뒤 보내기 버튼을 눌러주세요.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                         if model.isRecommending {
                             HStack {
                                 ProgressView()
@@ -554,7 +622,8 @@ private struct AIRecommendationChatView: View {
                     }
                     .padding(16)
                 }
-                .defaultScrollAnchor(.bottom)
+                .defaultScrollAnchor(model.recommendationMessages.count == 1 ? .top : .bottom)
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of: model.recommendationMessages.count) { _, _ in
                     if let last = model.recommendationMessages.last {
                         withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -578,7 +647,7 @@ private struct AIRecommendationChatView: View {
                     Image(systemName: "arrow.up")
                         .font(.headline)
                         .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                         .background(.indigo, in: Circle())
                 }
                 .disabled(model.aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isRecommending)
@@ -591,6 +660,13 @@ private struct AIRecommendationChatView: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("AI 추천")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("완료") { promptFocused = false }
+            }
+        }
+        .sheet(isPresented: $showsSearchRadius) { CompanionSearchRadiusSheet() }
         .task { await auth.refreshUsage() }
     }
 
@@ -603,7 +679,7 @@ private struct AIRecommendationChatView: View {
     @ViewBuilder
     private func messageRow(_ message: RecommendationMessage) -> some View {
         HStack(alignment: .bottom) {
-            if message.role == .user { Spacer(minLength: 52) }
+            if message.role == .user { Spacer(minLength: dynamicTypeSize.isAccessibilitySize ? 0 : 52) }
             VStack(alignment: .leading, spacing: 10) {
                 Text(message.text)
                     .font(.body)
@@ -634,16 +710,15 @@ private struct AIRecommendationChatView: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.isRecommending || (auth.isGuest && auth.usage?.remaining == 0))
-                    Text("카카오 검색으로 추가 AI 추천 · 게스트는 기존 추천과 합쳐 하루 5회")
+                    Text("추가 추천도 AI 추천 한도에 포함됩니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .padding(14)
             .background(message.role == .user ? Color.indigo : Color(uiColor: .systemBackground),
                         in: RoundedRectangle(cornerRadius: 18))
-            if message.role == .assistant { Spacer(minLength: 52) }
+            if message.role == .assistant { Spacer(minLength: dynamicTypeSize.isAccessibilitySize ? 0 : 52) }
         }
-        .sheet(item: $model.selectedPOI) { POIDetailView(poi: $0) }
     }
 }
 
@@ -707,27 +782,51 @@ private struct HeadingCalibrationView: View {
 
 private struct DiscoverView: View {
     @EnvironmentObject private var model: CompanionAppModel
+    var showRecommendations: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("어디로 가볼까요?").font(.largeTitle.bold())
-                    Text("iPhone에서 찾고, 글라스에서 바로 확인하세요.").foregroundStyle(.secondary)
+                    Text("오늘, 어디로 가볼까요?").font(.title2.bold())
+                    Text("마음에 드는 장소를 찾고 글라스로 이어보세요.")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
 
+                if !model.pois.isEmpty {
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("장소, 카테고리, 분위기 검색", text: $model.query)
+                    TextField("추천 결과에서 장소 검색", text: $model.query)
                         .submitLabel(.search).onSubmit { model.submitSearch() }
                     if !model.query.isEmpty {
                         Button { model.query = "" } label: { Image(systemName: "xmark.circle.fill") }
                             .foregroundStyle(.secondary)
+                            .accessibilityLabel("검색어 지우기")
                     }
                 }
                 .padding(14).background(.background, in: RoundedRectangle(cornerRadius: 16))
-                .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+                }
 
+                Button(action: showRecommendations) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "sparkles").font(.title2)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("나에게 맞는 장소 찾기").font(.headline)
+                            Text("분위기나 하고 싶은 일을 AI에게 물어보세요")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.right").accessibilityHidden(true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .background(.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
+                }
+                .buttonStyle(.plain)
+
+                NearbyRestaurantsSection()
+
+                if !model.pois.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack {
                         ForEach(model.categories, id: \.self) { category in
@@ -737,22 +836,41 @@ private struct DiscoverView: View {
                     }
                 }
 
-                SectionTitle("주변 추천", trailing: "\(model.filteredPOIs.count)곳")
+                SectionTitle("AI 추천 결과", trailing: "\(model.filteredPOIs.count)곳")
                 LazyVStack(spacing: 12) {
                     if model.filteredPOIs.isEmpty {
-                        ContentUnavailableView("추천 장소가 없습니다", systemImage: "mappin.and.ellipse",
-                            description: Text("AI 추천 탭에서 원하는 장소를 물어보세요."))
+                        ContentUnavailableView {
+                            Label(model.pois.isEmpty ? "첫 장소를 찾아보세요" : "일치하는 장소가 없어요",
+                                  systemImage: "mappin.and.ellipse")
+                        } description: {
+                            Text(model.pois.isEmpty
+                                 ? "조용한 카페부터 오늘의 식사까지, AI 추천으로 시작하세요."
+                                 : "다른 검색어나 카테고리로 다시 확인해 보세요.")
+                        } actions: {
+                            if model.pois.isEmpty {
+                                Button("AI에게 장소 물어보기", action: showRecommendations)
+                                    .buttonStyle(.borderedProminent)
+                            } else {
+                                Button("필터 초기화") {
+                                    model.query = ""
+                                    model.selectedCategory = "전체"
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
                     }
                     ForEach(model.filteredPOIs) { poi in
                         POIRow(poi: poi)
                     }
+                }
                 }
 
             }
             .padding(16)
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle("ARCH")
+        .navigationTitle("탐색")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -761,28 +879,33 @@ private struct POIRow: View {
     let poi: CompanionPOI
 
     var body: some View {
-        Button { model.selectedPOI = poi } label: {
-            HStack(spacing: 14) {
-                RoundedRectangle(cornerRadius: 14).fill(.indigo.opacity(0.12)).frame(width: 58, height: 58)
-                    .overlay(Image(systemName: icon).font(.title2).foregroundStyle(.indigo))
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(poi.name).font(.headline)
-                        if poi.rating > 0 { Text("★ \(poi.rating, specifier: "%.1f")").font(.caption).foregroundStyle(.orange) }
+        HStack(spacing: 8) {
+            Button { model.selectedPOI = poi } label: {
+                HStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 14).fill(.indigo.opacity(0.12)).frame(width: 58, height: 58)
+                        .overlay(Image(systemName: icon).font(.title2).foregroundStyle(.indigo))
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(poi.name).font(.headline)
+                            if poi.rating > 0 { Text("★ \(poi.rating, specifier: "%.1f")").font(.caption).foregroundStyle(.orange) }
+                        }
+                        Text(poi.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        Text("\(poi.distanceMeters)m · \(poi.category)").font(.caption).foregroundStyle(.secondary)
                     }
-                    Text(poi.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                    Text("\(poi.distanceMeters)m · \(poi.category)").font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-                Spacer()
-                Button { model.toggleFavorite(poi) } label: {
-                    Image(systemName: model.favoriteIDs.contains(poi.id) ? "heart.fill" : "heart")
-                }
-                .buttonStyle(.plain).foregroundStyle(.pink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(14).background(.background, in: RoundedRectangle(cornerRadius: 16))
+            .buttonStyle(.plain)
+            Button { model.toggleFavorite(poi) } label: {
+                Image(systemName: model.favoriteIDs.contains(poi.id) ? "heart.fill" : "heart")
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .buttonStyle(.plain).foregroundStyle(.pink)
+            .accessibilityLabel(model.favoriteIDs.contains(poi.id) ? "\(poi.name) 저장 해제" : "\(poi.name) 저장")
         }
-        .buttonStyle(.plain)
-        .sheet(item: $model.selectedPOI) { POIDetailView(poi: $0) }
+        .padding(14).background(.background, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var icon: String {
@@ -794,39 +917,143 @@ private struct POIDetailView: View {
     @EnvironmentObject private var model: CompanionAppModel
     @Environment(\.dismiss) private var dismiss
     let poi: CompanionPOI
+    @ObservedObject var bridge: QuestLocationBridge
+    @State private var displayWhenConnected = false
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                RoundedRectangle(cornerRadius: 24).fill(.indigo.gradient).frame(height: 180)
-                    .overlay(Image(systemName: "building.2.crop.circle.fill").font(.system(size: 64)).foregroundStyle(.white))
-                Text(poi.name).font(.largeTitle.bold())
-                Text(poi.summary).foregroundStyle(.secondary)
-                Label(poi.address, systemImage: "mappin")
-                Label("\(poi.distanceMeters)m 거리", systemImage: "figure.walk")
-                Spacer()
-                Button {
-                    model.selectedPOI = poi
-                    dismiss()
-                } label: {
-                    Label("글라스에서 안내 시작", systemImage: "vision.pro").frame(maxWidth: .infinity)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label(poi.category, systemImage: "mappin.and.ellipse")
+                        .font(.subheadline.weight(.medium)).foregroundStyle(.indigo)
+                    Text(poi.name).font(.largeTitle.bold())
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(poi.summary).foregroundStyle(.secondary)
+                    Divider()
+                    Label(poi.address, systemImage: "mappin")
+                        .textSelection(.enabled)
+                    Label("\(poi.distanceMeters)m 거리", systemImage: "figure.walk")
+                    Button { model.toggleFavorite(poi) } label: {
+                        Label(model.favoriteIDs.contains(poi.id) ? "저장한 장소" : "장소 저장",
+                              systemImage: model.favoriteIDs.contains(poi.id) ? "heart.fill" : "heart")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered).controlSize(.large)
+                    Button {
+                        let item = MKMapItem(placemark: MKPlacemark(coordinate:
+                            CLLocationCoordinate2D(latitude: poi.latitude, longitude: poi.longitude)))
+                        item.name = poi.name
+                        item.openInMaps()
+                    } label: {
+                        Label("Apple 지도에서 보기", systemImage: "map")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label(bridge.connectionStateText, systemImage: bridge.connectionSymbol)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(bridge.connectionColor)
+                        Text(bridge.statusText).font(.caption).foregroundStyle(.secondary)
+                        if bridge.connectionStateText == "준비됨" {
+                            Label("글라스가 연결되어 있습니다", systemImage: "checkmark.circle")
+                                .font(.subheadline)
+                        } else {
+                            Button {
+                                bridge.startBLE()
+                            } label: {
+                                Label(bridge.isRunning ? "다시 연결하기" : "글라스 연결하기", systemImage: "wave.3.right")
+                                    .frame(minHeight: 44)
+                            }
+                            .disabled(bridge.isRunning && !["실패", "연결 끊김", "Bluetooth 꺼짐"].contains(bridge.connectionStateText))
+                        }
+                        Button {
+                            if bridge.connectionStateText == "준비됨" {
+                                bridge.sendAiRecommendationsOnQuest([poi])
+                            } else {
+                                displayWhenConnected = true
+                                bridge.startBLE()
+                            }
+                        } label: {
+                            Label(displayWhenConnected ? "연결 후 장소를 표시합니다…"
+                                  : bridge.connectionStateText == "준비됨" ? "이 장소를 글라스에 표시" : "연결하고 장소 표시",
+                                  systemImage: "vision.pro")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .disabled(displayWhenConnected)
+                        Text("이 장소 1곳을 표시하며 기존 추천 표시는 교체됩니다. 경로 안내를 시작하지는 않습니다.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.indigo.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
                 }
-                .buttonStyle(.borderedProminent).controlSize(.large)
+                .padding(20)
             }
-            .padding().navigationTitle("장소 정보").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("장소 정보")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("닫기") { dismiss() }
+                }
+            }
         }
+        .tint(.indigo)
+        .presentationDragIndicator(.visible)
+        .onChange(of: bridge.connectionStateText) { _, state in
+            guard displayWhenConnected else { return }
+            if state == "준비됨" {
+                displayWhenConnected = false
+                bridge.sendAiRecommendationsOnQuest([poi])
+            } else if ["실패", "연결 끊김", "연결 안 됨", "Bluetooth 꺼짐"].contains(state) {
+                displayWhenConnected = false
+            }
+        }
+        .onDisappear { displayWhenConnected = false }
     }
 }
 
 private struct CompanionMapView: View {
     @EnvironmentObject private var model: CompanionAppModel
-    @State private var position: MapCameraPosition = .region(MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 37.3017361843555, longitude: 126.838560758712),
-        span: MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)))
+    @AppStorage("companionSearchRadius") private var searchRadius = 500.0
+    @State private var position: MapCameraPosition = .automatic
+    @State private var isAdjustingRadius = false
+    @State private var showsRadiusControl = false
+
+    private var searchCenter: CLLocationCoordinate2D {
+        model.recommendationLocation ?? CLLocationCoordinate2D(latitude: 37.3017361843555, longitude: 126.838560758712)
+    }
+
+    private var isPreview: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-map-preview")
+        #else
+        false
+        #endif
+    }
+
+    private func fitSearchRange() {
+        let extent = showsRadiusControl ? searchRadius * 3 : max(1500, searchRadius * 3)
+        position = .region(MKCoordinateRegion(center: searchCenter,
+            latitudinalMeters: extent, longitudinalMeters: extent))
+    }
 
     var body: some View {
         Map(position: $position) {
-            UserAnnotation()
+            if showsRadiusControl {
+                MapCircle(center: searchCenter, radius: searchRadius)
+                    .foregroundStyle(.indigo.opacity(0.12))
+                    .stroke(.indigo.opacity(0.8), lineWidth: 2)
+            }
+            if model.recommendationLocation != nil {
+                UserAnnotation()
+            } else {
+                Annotation("예시 중심 · 실제 GPS 아님", coordinate: searchCenter) {
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.title2).foregroundStyle(.indigo)
+                        .background(.background, in: Circle())
+                }
+            }
             ForEach(model.filteredPOIs) { poi in
                 Annotation(poi.name, coordinate: .init(latitude: poi.latitude, longitude: poi.longitude)) {
                     Button { model.selectedPOI = poi } label: {
@@ -837,11 +1064,15 @@ private struct CompanionMapView: View {
             }
         }
         .mapControls { MapCompass(); MapUserLocationButton(); MapScaleView() }
-        .onAppear { model.locateOnMap() }
+        .onAppear {
+            fitSearchRange()
+            if !isPreview { model.locateOnMap() }
+        }
         .onReceive(model.$recommendationLocation) { coordinate in
-            guard let coordinate else { return }
-            position = .region(MKCoordinateRegion(center: coordinate,
-                span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)))
+            if coordinate != nil { fitSearchRange() }
+        }
+        .onChange(of: searchRadius) { _, _ in
+            if showsRadiusControl && !isAdjustingRadius { fitSearchRange() }
         }
         .overlay(alignment: .topTrailing) {
             VStack(alignment: .trailing, spacing: 8) {
@@ -849,7 +1080,7 @@ private struct CompanionMapView: View {
                     Label("내 위치", systemImage: "location.fill")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(model.isLocatingOnMap)
+                .disabled(model.isLocatingOnMap || isPreview)
                 if model.isLocatingOnMap { ProgressView("GPS 확인 중").padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)) }
                 if let error = model.mapLocationError {
                     Text(error).font(.caption).padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -857,10 +1088,47 @@ private struct CompanionMapView: View {
             }
             .padding(12)
         }
-        .safeAreaInset(edge: .bottom) {
-            if let poi = model.selectedPOI {
-                HStack { VStack(alignment: .leading) { Text(poi.name).font(.headline); Text("\(poi.distanceMeters)m · \(poi.category)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "vision.pro") }
-                    .padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18)).padding()
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showsRadiusControl {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top) {
+                        Label(model.recommendationLocation == nil ? "예시 위치 기준 · GPS 미확인" : "최근 확인한 GPS 위치 기준",
+                              systemImage: model.recommendationLocation == nil ? "info.circle" : "location.fill")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button("완료") {
+                            withAnimation(.easeInOut(duration: 0.2)) { showsRadiusControl = false }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .frame(minWidth: 44, minHeight: 32)
+                    }
+                    CompanionSearchRadiusControl { editing in
+                        isAdjustingRadius = editing
+                        if !editing {
+                            withAnimation(.easeInOut(duration: 0.25)) { fitSearchRange() }
+                        }
+                    }
+                }
+                .padding(18)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+                .padding(.horizontal, 12).padding(.vertical, 8)
+            } else {
+                HStack {
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showsRadiusControl = true
+                            fitSearchRange()
+                        }
+                    } label: {
+                        Label("검색 범위 · \(Int(searchRadius))m", systemImage: "slider.horizontal.3")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 16).padding(.vertical, 14)
+                            .background(.regularMaterial, in: Capsule())
+                    }
+                    .accessibilityHint("검색 범위 원과 반경 조절 패널을 엽니다")
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
             }
         }
         .navigationTitle("주변 지도").navigationBarTitleDisplayMode(.inline)
@@ -884,8 +1152,6 @@ private struct SavedPlacesView: View {
 private struct ProfileView: View {
     @EnvironmentObject private var auth: CompanionAuthSession
     @AppStorage("companionDisplayName") private var displayName = "ARCH 사용자"
-    @AppStorage("companionSearchRadius") private var searchRadius = 500.0
-    @AppStorage("companionLanguage") private var language = "한국어"
 
     var body: some View {
         Form {
@@ -896,11 +1162,13 @@ private struct ProfileView: View {
                 }
             }
             Section("프로필") { TextField("표시 이름", text: $displayName); LabeledContent("로그인 상태", value: auth.isGuest ? "게스트" : (auth.email ?? "연결 준비 중")) }
-            Section("검색 설정") {
-                Picker("언어", selection: $language) { Text("한국어").tag("한국어"); Text("English").tag("English") }
-                VStack(alignment: .leading) { Text("기본 반경 \(Int(searchRadius))m"); Slider(value: $searchRadius, in: 100...1000, step: 100) }
+            Section {
+                Link(destination: URL(string: UIApplication.openSettingsURLString)!) {
+                    Label("앱 권한 설정 열기", systemImage: "gearshape")
+                }
+            } footer: {
+                Text("위치는 주변 장소 추천에, Bluetooth는 Quest 연결에 사용합니다. 허용 상태는 iPhone 설정에서 확인하세요.")
             }
-            Section("권한") { Label("위치: 앱 사용 중", systemImage: "location.fill"); Label("Bluetooth: 기기 연결", systemImage: "wave.3.right") }
         }
         .navigationTitle("프로필 및 설정")
     }
@@ -916,10 +1184,17 @@ private struct OtherView: View {
     @State private var isSigningUp = false
     @State private var authMessage: String?
     @State private var appleNonce: String?
+    @State private var showsDiagnostics = false
 
     var body: some View {
         Form {
+            Section("기기와 설정") {
+                NavigationLink { DeviceHubView(bridge: bridge) } label: { Label("글라스 연결", systemImage: "vision.pro") }
+                NavigationLink { HeadingCalibrationView(bridge: bridge) } label: { Label("글라스 방향 보정", systemImage: "safari") }
+                NavigationLink { ProfileView() } label: { Label("프로필 및 설정", systemImage: "person.crop.circle") }
+            }
             Section("계정") {
+                DisclosureGroup(auth.isAuthenticated ? "내 계정 및 사용량" : "로그인 및 사용량") {
                 SignInWithAppleButton(.signIn, onRequest: { request in
                     do {
                         let rawNonce = try AppleSignInNonce.makeRawNonce()
@@ -933,7 +1208,7 @@ private struct OtherView: View {
                 .signInWithAppleButtonStyle(.black)
                 .frame(height: 44)
                 .disabled(true)
-                Text("Apple 로그인은 유료 Apple Developer 팀 등록 후 활성화됩니다.")
+                Text("Apple 로그인은 준비 중입니다. 이메일로 로그인하거나 게스트로 계속 이용하세요.")
                     .font(.footnote).foregroundStyle(.secondary)
 
                 if auth.isGuest {
@@ -981,13 +1256,19 @@ private struct OtherView: View {
                         .disabled(auth.isWorking)
                 }
             }
-            Section("앱 도구") {
-                NavigationLink { ProfileView() } label: { Label("프로필 및 설정", systemImage: "person.crop.circle") }
-                NavigationLink { HeadingCalibrationView(bridge: bridge) } label: { Label("헤딩 보정", systemImage: "safari") }
-                NavigationLink { DeviceHubView(bridge: bridge) } label: { Label("기기 연결", systemImage: "vision.pro") }
             }
+            #if DEBUG
+            Section {
+                Button {
+                    showsDiagnostics.toggle()
+                } label: {
+                    Label(showsDiagnostics ? "개발자 도구 접기" : "개발자 도구",
+                          systemImage: "wrench.and.screwdriver")
+                }
+            }
+            if showsDiagnostics {
             Section("Supabase 연결") {
-                LabeledContent("프로젝트", value: "pdvemspkknlfapdzkwhz")
+                LabeledContent("프로젝트", value: SupabaseConfiguration.projectURL.host ?? "설정 없음")
                 LabeledContent("함수", value: "chat")
                 LabeledContent("상태", value: model.supabaseProbeStatus)
                 Button {
@@ -1019,6 +1300,8 @@ private struct OtherView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            }
+            #endif
         }
         .navigationTitle("기타")
     }
@@ -1133,6 +1416,7 @@ private struct DeviceHubView: View {
                 .disabled(!bridge.isRunning)
             }
 
+            #if DEBUG
             Section("개발") {
                 NavigationLink {
                     DeviceDiagnosticsView(bridge: bridge)
@@ -1140,6 +1424,7 @@ private struct DeviceHubView: View {
                     Label("개발자 진단", systemImage: "wrench.and.screwdriver")
                 }
             }
+            #endif
         }
         .navigationTitle("연결 기기")
     }
@@ -1245,6 +1530,7 @@ private struct CategoryButtonStyle: ButtonStyle {
 #Preview { ContentView() }
 
 
+#if DEBUG
 private struct AIDebugView: View {
     @EnvironmentObject private var model: CompanionAppModel
     @EnvironmentObject private var auth: CompanionAuthSession
@@ -1271,7 +1557,7 @@ private struct AIDebugView: View {
                 LabeledContent("GPU", value: model.lastRecommendationGPU)
             }
             Section("요청 및 응답 로그") {
-                Text("질문과 GPS 좌표가 포함됩니다. 인증 헤더와 토큰은 기록하지 않습니다. 로그는 앱 메모리에만 보관됩니다.")
+                Text("질문·좌표·요청 및 응답 본문은 기록하지 않습니다. 진단 로그는 개발 빌드의 메모리에만 보관됩니다. 공유 전 내용을 확인하세요.")
                     .font(.caption).foregroundStyle(.secondary)
                 ShareLink("로그 공유", item: model.aiDebugLog).disabled(model.aiDebugLog.isEmpty)
                 Button("로그 지우기", role: .destructive) { model.aiDebugLog = "" }
@@ -1283,3 +1569,4 @@ private struct AIDebugView: View {
         .navigationTitle("AI 디버그")
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 struct DeviceDiagnosticsView: View {
@@ -194,3 +195,4 @@ private extension View {
 }
 
 #Preview { DeviceDiagnosticsView(bridge: QuestLocationBridge()) }
+#endif

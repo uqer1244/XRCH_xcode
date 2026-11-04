@@ -1,2 +1,8 @@
-ARCH_CLIENT_SECRET =
+// Public-safe defaults: a fresh clone must not contact the production backend.
+SUPABASE_PROJECT_HOST =
+SUPABASE_ANON_KEY =
+DEVELOPMENT_TEAM =
 #include? "LocalSecrets.xcconfig"
+
+// These are public client settings embedded in the app, not server secrets.
+INFOPLIST_FILE = $(SRCROOT)/Config/AppInfo.plist

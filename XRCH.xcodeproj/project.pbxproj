@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		000000000000000000000121 /* ClientConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/ClientConfig.xcconfig; sourceTree = "<group>"; };
 		000000000000000000000120 /* XRCH.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XRCH.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000121 /* Config/ClientConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/ClientConfig.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -32,7 +32,7 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000010 /* XRCH */,
-				000000000000000000000121 /* ClientConfig.xcconfig */,
+				000000000000000000000121 /* Config/ClientConfig.xcconfig */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -74,7 +74,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2630;
-				LastUpgradeCheck = 2700;
+				LastUpgradeCheck = 2720;
 				TargetAttributes = {
 					000000000000000100000000 = {
 						CreatedOnToolsVersion = 26.3;
@@ -119,7 +119,7 @@
 /* Begin XCBuildConfiguration section */
 		000000000000000011000000 /* Debug configuration for PBXProject "XRCH" */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 000000000000000000000121 /* ClientConfig.xcconfig */;
+			baseConfigurationReference = 000000000000000000000121 /* Config/ClientConfig.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -190,7 +190,7 @@
 		};
 		000000000000000012000000 /* Release configuration for PBXProject "XRCH" */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 000000000000000000000121 /* ClientConfig.xcconfig */;
+			baseConfigurationReference = 000000000000000000000121 /* Config/ClientConfig.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -256,12 +256,10 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = UHF42VJN44;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_ARCHClientSecret = "$(ARCH_CLIENT_SECRET)";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Quest 헤드셋에 현재 위치를 전송하기 위해 Bluetooth를 사용합니다.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Quest 헤드셋으로 현재 위치를 전송하기 위해 로컬 네트워크를 사용합니다.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "AR 글라스에 현재 위치를 전달하기 위해 iPhone 위치를 사용합니다.";
@@ -298,12 +296,10 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = UHF42VJN44;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_ARCHClientSecret = "$(ARCH_CLIENT_SECRET)";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Quest 헤드셋에 현재 위치를 전송하기 위해 Bluetooth를 사용합니다.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Quest 헤드셋으로 현재 위치를 전송하기 위해 로컬 네트워크를 사용합니다.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "AR 글라스에 현재 위치를 전달하기 위해 iPhone 위치를 사용합니다.";

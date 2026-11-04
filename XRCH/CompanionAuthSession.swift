@@ -159,6 +159,7 @@ final class CompanionAuthSession: ObservableObject {
     }
 
     func validAccessToken(forceRefresh: Bool = false) async throws -> String {
+        try SupabaseConfiguration.validate()
         // A locked or corrupt Keychain is not proof that no previous identity exists.
         if storageReadFailed {
             session = try readStoredSession()
@@ -375,6 +376,7 @@ final class CompanionAuthSession: ObservableObject {
     }
 
     private func sendRequest(url: URL, body: [String: String]) async throws -> Data {
+        try SupabaseConfiguration.validate()
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 20

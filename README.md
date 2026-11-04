@@ -18,10 +18,22 @@ ARCH 위치 기반 AR 앱을 위한 iPhone 동반 앱 프로토타입입니다. 
 
 ## 요구 사항
 
-- Xcode 26.3 이상 권장
+- Xcode 27.2에서 빌드 확인
 - iOS 17 이상
 - iPhone 실기기: 실제 위치, 나침반, BLE 연동 테스트에 필요
 - Quest 측 Unity 앱: `arch.location.v1` 위치 패킷과 아래 UDP/BLE 연결 규약을 지원해야 합니다.
+
+## 로컬 설정
+
+새로 복제한 저장소는 운영 Supabase로 자동 접속하지 않습니다. AI 추천·계정 기능을 사용하려면 본인 프로젝트 설정을 준비하세요. MapKit 주변 음식점 검색은 Supabase 설정 없이 사용할 수 있습니다.
+
+```sh
+cp Config/LocalSecrets.xcconfig.example Config/LocalSecrets.xcconfig
+```
+
+`LocalSecrets.xcconfig`에 Supabase 호스트(스킴 없이), 공개 anon/publishable 키, 실기기 서명용 팀 ID를 입력합니다. 이 파일은 Git에서 제외됩니다. 값은 빌드 시 앱에 포함되므로 **service-role 키·서버 비밀값은 절대 넣지 마세요.** 예제의 placeholder는 실제 설정으로 바꿔야 합니다.
+
+서버 보안 전제와 공개 전 체크리스트는 [SECURITY.md](SECURITY.md)를 참고하세요.
 
 ## 실행
 
@@ -134,13 +146,20 @@ BLE에서는 기존 위치 패킷과 동일하게 JSON 뒤에 줄바꿈을 붙�
 
 앱 시작 시 Supabase Auth의 `/auth/v1/signup`에 빈 JSON을 보내 익명 세션을 생성합니다. 기존 세션이 있으면 Keychain에서 복원하고, 만료 전 `/auth/v1/token?grant_type=refresh_token`으로 갱신합니다. 동시에 발생한 인증 요청은 한 작업을 공유합니다. 네트워크 장애 때 기존 세션을 삭제하거나 새 게스트 계정을 생성하지 않습니다.
 
-`XRCH/SupabaseConfiguration.swift`에는 프로젝트 URL과 서버 웹 클라이언트에 공개된 legacy anon 키만 있습니다. 이 키는 공개 클라이언트 설정이며 사용자 권한을 대신하지 않습니다. service-role 키나 GPU 서버 비밀값을 앱에 넣지 않습니다. 기존 ARCH_CLIENT_SECRET은 추천 요청에 사용하지 않습니다.
+`XRCH/SupabaseConfiguration.swift`는 로컬 빌드 설정에서 주입한 공개 클라이언트 설정을 읽습니다. 설정이 없으면 인증·추천 네트워크 요청을 시작하지 않고 설정 안내를 표시합니다. 공개 키는 사용자 권한을 대신하지 않으며 앱에서 추출할 수 있습니다. service-role 키나 GPU 서버 비밀값을 앱에 넣지 않습니다. 사용하지 않는 ARCH_CLIENT_SECRET 주입 설정은 제거했습니다.
 
 추천과 연결 확인 요청은 `Authorization: Bearer <사용자 JWT>` 및 프로젝트 `apikey` 헤더를 보냅니다. 게스트에게 로그인 폼 입력을 요구하지 않습니다. 계정 화면은 게스트와 정식 로그인을 구분하고, 기존 이메일 로그인은 선택적으로 유지합니다. Apple 로그인은 후속 구현입니다.
 
 실제 연결에는 서버 관리자가 Supabase 익명 인증을 활성화하고, JWT 지원 및 게스트 GPU 한도 PR을 배포해야 합니다. 서버 PR이 배포되기 전에는 인증 비활성화 오류 또는 API_KEY_REQUIRED가 발생할 수 있습니다. config.toml 변경만으로 운영 설정이 바뀌지 않습니다.
 
 GPU 일일 한도 응답(429)은 초기화 시각과 함께 표시합니다. 정식 계정 로그아웃은 Supabase의 해당 세션을 종료한 뒤 기존 게스트 세션을 복원합니다. 계정 연결·삭제, App Attest 및 폐기된 세션의 복구 UX는 후속 작업입니다. 기본 탐색 화면의 기존 데이터 소스는 이 변경에서 수정하지 않습니다.
+
+## UI 및 주변 음식점
+
+- 탐색 첫 화면은 Apple MapKit으로 반경 내 음식점을 가까운 순서로 최대 7곳 표시합니다. AI 추천이나 Supabase 사용량을 차감하지 않습니다. 결과는 5분간 재사용하며 새로고침으로 다시 검색할 수 있습니다.
+- 지도에서 검색 범위 버튼을 누르면 원과 슬라이더가 열립니다. 반경은 100m–1km, 5m 단위이며 AI 추천 화면과 같은 설정을 공유합니다. 범위 변경 자체는 검색 요청을 보내지 않습니다.
+- 개발 빌드에서 `-glass-preview` 실행 인수는 실제 인증·BLE 없이 장소 및 글라스 연결 UI를 미리 보여줍니다. `-map-preview`는 지도에서 시작하며 자동 GPS 요청을 생략합니다.
+- 상세 진단 화면은 개발 빌드에서만 표시되며, AI 로그에는 질문·좌표·요청/응답 본문을 남기지 않습니다.
 
 ## 프로젝트 구성
 
@@ -151,11 +170,15 @@ GPU 일일 한도 응답(429)은 초기화 시각과 함께 표시합니다. 정
 
 ## 익명 인증 검증
 
-실제 Supabase와 Keychain을 변경하지 않는 모의 인증 검증:
+실제 Supabase와 Keychain을 변경하지 않는 모의 인증 검증 (`AUTH_TESTING`은 테스트 컴파일에만 사용하며 실제 앱 빌드에는 추가하지 않습니다):
 
 ```sh
-xcrun swiftc -swift-version 5 -parse-as-library XRCH/SupabaseConfiguration.swift XRCH/CompanionUsage.swift XRCH/AppleSignInNonce.swift XRCH/CompanionAuthSession.swift Tests/AuthSessionHarness.swift -o /tmp/xrch-auth-tests
+xcrun swiftc -D AUTH_TESTING -swift-version 5 -parse-as-library XRCH/SupabaseConfiguration.swift XRCH/CompanionUsage.swift XRCH/AppleSignInNonce.swift XRCH/CompanionAuthSession.swift Tests/AuthSessionHarness.swift -o /tmp/xrch-auth-tests
 /tmp/xrch-auth-tests
+
+# No AUTH_TESTING: verify a fresh clone makes no auth network requests.
+xcrun swiftc -swift-version 5 -parse-as-library XRCH/SupabaseConfiguration.swift XRCH/CompanionUsage.swift XRCH/AppleSignInNonce.swift XRCH/CompanionAuthSession.swift Tests/UnconfiguredSessionHarness.swift -o /tmp/xrch-unconfigured-tests
+/tmp/xrch-unconfigured-tests
 ```
 
 네트워크 또는 Keychain 읽기 실패 시 저장된 익명 계정을 버리지 않습니다. 서버가 access token을 401로 거절하면 한 번 갱신 후 재요청하고, 429·서버 오류·타임아웃은 자동 재시도하지 않습니다. 실패 환급·추천 요청 재전송 멱등성은 서버 후속 작업입니다.
